@@ -4,6 +4,7 @@ const sqlite3 = require('sqlite3').verbose();
 const bodyParser = require('body-parser');
 const path = require('path');
 const helmet = require('helmet');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -25,10 +26,8 @@ app.use(cors({
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
-      // For development, allow it (remove in production)
+      // For development, allow it; restrict in production.
       callback(null, true);
-      // In production, consider rejecting unauthorized origins:
-      // callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -40,40 +39,46 @@ app.use(bodyParser.json({ limit: '1mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Determine database path and ensure directory exists
+const dbDir = process.env.NODE_ENV === 'production' ? '/data' : '.';
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+const dbPath = path.join(dbDir, 'analytics.db');
+
 // Initialize SQLite DB
-const dbPath = process.env.NODE_ENV === 'production' ? '/data/analytics.db' : './analytics.db';
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Database error:', err.message);
-    return;
+    process.exit(1);
+  } else {
+    console.log(`Connected to SQLite database at ${dbPath}`);
+    // Create visits table with additional fields
+    db.run(`CREATE TABLE IF NOT EXISTS visits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      visitor_id TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      url TEXT,
+      path TEXT,
+      referrer TEXT,
+      user_agent TEXT,
+      screen_width INTEGER,
+      screen_height INTEGER,
+      ip_address TEXT,
+      country TEXT,
+      event_type TEXT DEFAULT 'page_view',
+      duration INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      processed INTEGER DEFAULT 0
+    )`, (err) => {
+      if (!err) {
+        console.log('Visits table ready');
+        db.run('CREATE INDEX IF NOT EXISTS idx_visitor_id ON visits (visitor_id)');
+      } else {
+        console.error('Table creation error:', err.message);
+      }
+    });
   }
-  console.log(`Connected to SQLite database at ${dbPath}`);
-  
-  // Create visits table with additional fields
-  db.run(`CREATE TABLE IF NOT EXISTS visits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    visitor_id TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    url TEXT,
-    path TEXT,
-    referrer TEXT,
-    user_agent TEXT,
-    screen_width INTEGER,
-    screen_height INTEGER,
-    ip_address TEXT,
-    country TEXT,
-    event_type TEXT DEFAULT 'page_view',
-    duration INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    processed INTEGER DEFAULT 0
-  )`, (err) => {
-    if (!err) {
-      console.log('Visits table ready');
-      db.run('CREATE INDEX IF NOT EXISTS idx_visitor_id ON visits (visitor_id)');
-    } else {
-      console.error('Table creation error:', err.message);
-    }
-  });
 });
 
 // Request logging middleware
@@ -137,7 +142,7 @@ app.get('/api/track-pixel', (req, res) => {
   let visitData;
   try {
     visitData = JSON.parse(decodeURIComponent(req.query.data || '{}'));
-  } catch {
+  } catch (e) {
     visitData = req.query;
     console.warn('Failed to parse tracking data in pixel endpoint; using raw query params');
   }
@@ -195,7 +200,7 @@ app.get('/api/analytics', (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== 'Bearer your-secret-token') {
     console.warn('Unauthorized analytics access');
-    // In production, you would return a 401 error:
+    // In production, enforce authorization:
     // return res.status(401).json({ error: 'Unauthorized' });
   }
   
