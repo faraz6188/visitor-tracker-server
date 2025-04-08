@@ -12,7 +12,8 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "helmet": "^8.1.0",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "geoip-lite": "^1.4.10"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
