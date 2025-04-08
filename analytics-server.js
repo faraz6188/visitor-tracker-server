@@ -8,7 +8,7 @@ const helmet = require('helmet');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Middleware
+// Middleware: Security, CORS, and JSON parsing
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' }
@@ -25,7 +25,10 @@ app.use(cors({
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
-      callback(null, true); // For dev; restrict in production
+      // For development, allow it (remove in production)
+      callback(null, true);
+      // In production, consider rejecting unauthorized origins:
+      // callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -40,10 +43,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Initialize SQLite DB
 const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/analytics.db' : './analytics.db';
 const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) return console.error('Database error:', err.message);
+  if (err) {
+    console.error('Database error:', err.message);
+    return;
+  }
   console.log(`Connected to SQLite database at ${dbPath}`);
-});
-
+  
+  // Create visits table with additional fields
   db.run(`CREATE TABLE IF NOT EXISTS visits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     visitor_id TEXT NOT NULL,
@@ -70,23 +76,24 @@ const db = new sqlite3.Database(dbPath, (err) => {
   });
 });
 
-// Request logging
+// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url} - ${req.ip}`);
   next();
 });
 
-// Helper to insert visit
+// Helper function to safely insert visit data into the database
 function safeInsertVisit(data, response) {
   if (!data.visitor_id || !data.timestamp) {
-    console.error('Missing required fields');
-    return response?.status(400).json({ error: 'Missing required fields' });
+    console.error('Missing required fields in visit data');
+    if (response) response.status(400).json({ error: 'Missing required fields' });
+    return;
   }
-
+  
   const sql = `INSERT INTO visits 
     (visitor_id, timestamp, url, path, referrer, user_agent, screen_width, screen_height, ip_address, event_type, duration) 
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
+  
   db.run(sql, [
     data.visitor_id,
     data.timestamp,
@@ -101,11 +108,12 @@ function safeInsertVisit(data, response) {
     data.duration || 0
   ], function (err) {
     if (err) {
-      console.error('Insert error:', err.message);
-      return response?.status(500).json({ error: 'Failed to save visit' });
+      console.error('Error saving visit:', err.message);
+      if (response) response.status(500).json({ error: 'Failed to save visit data' });
+      return;
     }
     console.log(`Visit recorded (ID: ${this.lastID})`);
-    response?.status(200).json({ success: true, id: this.lastID });
+    if (response) response.status(200).json({ success: true, id: this.lastID });
   });
 }
 
@@ -119,28 +127,28 @@ app.post('/api/track', (req, res) => {
                            req.ip;
     safeInsertVisit(visitData, res);
   } catch (e) {
-    console.error('Track POST error:', e);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error in /api/track POST:', e);
+    res.status(500).json({ error: 'Server error processing request' });
   }
 });
 
-// GET pixel tracker
+// GET pixel tracking endpoint
 app.get('/api/track-pixel', (req, res) => {
   let visitData;
   try {
     visitData = JSON.parse(decodeURIComponent(req.query.data || '{}'));
   } catch {
     visitData = req.query;
-    console.warn('Failed to parse tracking data');
+    console.warn('Failed to parse tracking data in pixel endpoint; using raw query params');
   }
-
+  
   visitData.ip_address = req.headers['x-forwarded-for']?.split(',')[0] ||
                          req.headers['x-real-ip'] ||
                          req.connection.remoteAddress ||
                          req.ip;
-
+  
   safeInsertVisit(visitData);
-
+  
   res.set({
     'Content-Type': 'image/gif',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -149,7 +157,7 @@ app.get('/api/track-pixel', (req, res) => {
   }).send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
 });
 
-// iOS-specific tracker
+// iOS-specific tracking endpoint
 app.get('/api/ios-track', (req, res) => {
   const visitData = {
     visitor_id: req.query.vid || 'ios-unknown',
@@ -166,9 +174,9 @@ app.get('/api/ios-track', (req, res) => {
                 req.ip,
     event_type: 'ios_visit'
   };
-
+  
   safeInsertVisit(visitData);
-
+  
   res.set({
     'Content-Type': 'image/gif',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -177,23 +185,23 @@ app.get('/api/ios-track', (req, res) => {
   }).send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
 });
 
-// Health check
+// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Analytics endpoint
+// Analytics endpoint with simple authentication
 app.get('/api/analytics', (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== 'Bearer your-secret-token') {
     console.warn('Unauthorized analytics access');
-    // Uncomment in prod:
+    // In production, you would return a 401 error:
     // return res.status(401).json({ error: 'Unauthorized' });
   }
-
+  
   db.all('SELECT * FROM visits ORDER BY timestamp DESC LIMIT 1000', [], (err, rows) => {
     if (err) {
-      console.error('Analytics fetch error:', err.message);
+      console.error('Error fetching analytics data:', err.message);
       return res.status(500).json({ error: 'Failed to fetch data' });
     }
     res.json(rows);
@@ -205,18 +213,18 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// 404 route
+// Catch-all 404 route
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Error handler
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
-// ✅ Start the server
+// Start the server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Analytics server running on port ${PORT}`);
 });
