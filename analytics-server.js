@@ -6,8 +6,13 @@ const path = require('path');
 const helmet = require('helmet'); // For security
 
 // Initialize express app
+const express = require('express');
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 10000; // Default to 10000 if PORT is not set
+
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Analytics server running on port ${port}`);
+});
 
 // Set up middleware
 app.use(helmet({
