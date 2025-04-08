@@ -1,0 +1,20 @@
+{
+  "name": "analytics-server",
+  "version": "1.0.0",
+  "description": "Local analytics server with SQLite storage",
+  "main": "analytics-server.js",
+  "scripts": {
+    "start": "node analytics-server.js",
+    "dev": "nodemon analytics-server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

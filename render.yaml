@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: analytics-server
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node analytics-server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    autoDeploy: true
