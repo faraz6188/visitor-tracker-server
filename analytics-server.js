@@ -38,9 +38,11 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize SQLite DB
-const db = new sqlite3.Database('./analytics.db', (err) => {
+const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/analytics.db' : './analytics.db';
+const db = new sqlite3.Database(dbPath, (err) => {
   if (err) return console.error('Database error:', err.message);
-  console.log('Connected to SQLite database.');
+  console.log(`Connected to SQLite database at ${dbPath}`);
+});
 
   db.run(`CREATE TABLE IF NOT EXISTS visits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
