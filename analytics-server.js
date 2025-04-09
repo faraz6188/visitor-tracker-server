@@ -76,19 +76,6 @@ app.use((req, res, next) => {
 });
 
 // Determine the database directory
-try {
-  // For Render.com environment
-  if (process.env.RENDER && fs.existsSync('/data')) {
-    dbDir = '/data';
-    console.log('Using /data directory for database storage');
-  } else {
-    dbDir = '.';
-    console.log('Using local directory for database storage');
-  }
-} catch (e) {
-  console.error('Error determining database directory:', e);
-  dbDir = '.';
-}
 
 const dbPath = path.join(dbDir, 'analytics.db');
 console.log(`Database path: ${dbPath}`);
