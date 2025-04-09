@@ -96,7 +96,7 @@ app.use((req, res, next) => {
 });
 
 // Helper function to safely insert visit data
-function safeInsertVisit(data, response) {
+function safeInsertVisit(data, req, response) {
   if (!data.visitor_id || !data.timestamp) {
     console.error('Missing required fields in visit data');
     if (response) response.status(400).json({ error: 'Missing required fields' });
@@ -112,7 +112,7 @@ function safeInsertVisit(data, response) {
   const city = geoData?.city || 'Unknown';
   
   // Get language from headers
-  const language = req.headers['accept-language']?.split(',')[0] || 'Unknown';
+  const language = req?.headers['accept-language']?.split(',')[0] || 'Unknown';
   
   const sql = `INSERT INTO visits 
     (visitor_id, timestamp, url, path, referrer, user_agent, screen_width, screen_height, 
@@ -173,7 +173,7 @@ app.post('/api/track', (req, res) => {
                            req.headers['x-real-ip'] ||
                            req.connection.remoteAddress ||
                            req.ip;
-    safeInsertVisit(visitData, res);
+    safeInsertVisit(visitData, req, res);
   } catch (e) {
     console.error('Error in /api/track POST:', e);
     res.status(500).json({ error: 'Server error processing request' });
@@ -195,7 +195,7 @@ app.get('/api/track-pixel', (req, res) => {
                          req.connection.remoteAddress ||
                          req.ip;
   
-  safeInsertVisit(visitData);
+  safeInsertVisit(visitData, req);
   
   res.set({
     'Content-Type': 'image/gif',
@@ -203,6 +203,27 @@ app.get('/api/track-pixel', (req, res) => {
     'Pragma': 'no-cache',
     'Expires': '0'
   }).send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+});
+
+// Add analytics API endpoint
+app.get('/api/analytics', (req, res) => {
+  db.all(`SELECT * FROM visits ORDER BY id DESC LIMIT 1000`, [], (err, rows) => {
+    if (err) {
+      console.error('Error fetching analytics data:', err.message);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(rows);
+  });
+});
+
+// Serve dashboard
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// Serve the index page as default
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Start the server
