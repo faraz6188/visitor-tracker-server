@@ -76,7 +76,6 @@ app.use((req, res, next) => {
 });
 
 // Determine the database directory
-let dbDir;
 try {
   // For Render.com environment
   if (process.env.RENDER && fs.existsSync('/data')) {
