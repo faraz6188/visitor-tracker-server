@@ -13,6 +13,14 @@
         .loading { opacity: 0.5; }
         .error-msg { color: red; font-weight: bold; }
         .status-indicator { font-size: 0.8rem; color: #666; }
+        .debug-info { 
+            background-color: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
@@ -94,6 +102,14 @@
             </div>
         </div>
         
+        <!-- Debug Info Section (Can be hidden in production) -->
+        <div class="card mb-4">
+            <div class="card-header">Server Status</div>
+            <div class="card-body">
+                <div class="debug-info" id="debug-info">Checking server status...</div>
+            </div>
+        </div>
+        
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Recent Visits</h5>
@@ -134,17 +150,26 @@
         // Check server health
         async function checkServerHealth() {
             try {
+                document.getElementById('debug-info').textContent = 'Checking server health...';
                 const response = await fetch('/health');
+                
                 if (response.ok) {
+                    const data = await response.json();
                     document.getElementById('connection-status').textContent = 'Connected to server';
                     document.getElementById('connection-status').style.color = 'green';
+                    document.getElementById('debug-info').textContent = 
+                        `Server Status: ${data.status}\nDatabase: ${data.database || 'Unknown'}\nTimestamp: ${data.timestamp}`;
                     return true;
                 } else {
+                    const data = await response.json();
+                    document.getElementById('debug-info').textContent = 
+                        `Server Error: ${data.message || 'Unknown error'}\nTimestamp: ${data.timestamp}`;
                     throw new Error('Server returned error');
                 }
             } catch (error) {
                 document.getElementById('connection-status').textContent = 'Server connection error';
                 document.getElementById('connection-status').style.color = 'red';
+                document.getElementById('debug-info').textContent = `Connection Error: ${error.message}`;
                 return false;
             }
         }
@@ -187,7 +212,8 @@
                         countryCounts[visit.country] = (countryCounts[visit.country] || 0) + 1;
                     }
                 });
-                const topCountry = Object.entries(countryCounts).sort((a, b) => b[1] - a[1])[0] || ['Unknown', 0];
+                const topCountryArray = Object.entries(countryCounts).sort((a, b) => b[1] - a[1]);
+                const topCountry = topCountryArray.length > 0 ? topCountryArray[0] : ['Unknown', 0];
                 
                 // Calculate top city
                 const cityCounts = {};
@@ -196,7 +222,8 @@
                         cityCounts[visit.city] = (cityCounts[visit.city] || 0) + 1;
                     }
                 });
-                const topCity = Object.entries(cityCounts).sort((a, b) => b[1] - a[1])[0] || ['Unknown', 0];
+                const topCityArray = Object.entries(cityCounts).sort((a, b) => b[1] - a[1]);
+                const topCity = topCityArray.length > 0 ? topCityArray[0] : ['Unknown', 0];
                 
                 // Calculate top language
                 const languageCounts = {};
@@ -205,7 +232,8 @@
                         languageCounts[visit.language] = (languageCounts[visit.language] || 0) + 1;
                     }
                 });
-                const topLanguage = Object.entries(languageCounts).sort((a, b) => b[1] - a[1])[0] || ['Unknown', 0];
+                const topLanguageArray = Object.entries(languageCounts).sort((a, b) => b[1] - a[1]);
+                const topLanguage = topLanguageArray.length > 0 ? topLanguageArray[0] : ['Unknown', 0];
                 
                 // Calculate average duration
                 const durationsArray = data
