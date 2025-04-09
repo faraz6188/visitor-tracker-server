@@ -10,6 +10,7 @@
         .card { margin-bottom: 20px; }
         #visits-table { font-size: 0.85rem; }
         .stats-card { min-height: 150px; }
+        .loading { opacity: 0.5; }
     </style>
 </head>
 <body>
@@ -87,8 +88,9 @@
         </div>
         
         <div class="card mb-4">
-            <div class="card-header">
-                <h5>Recent Visits</h5>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Recent Visits</h5>
+                <button id="refresh-btn" class="btn btn-primary btn-sm">Refresh Data</button>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -122,7 +124,10 @@
         // Function to fetch and display analytics data
         async function loadAnalytics() {
             try {
+                document.getElementById('refresh-btn').classList.add('loading');
                 const response = await fetch('/api/analytics');
+                document.getElementById('refresh-btn').classList.remove('loading');
+                
                 if (!response.ok) {
                     throw new Error('Failed to fetch analytics data');
                 }
@@ -137,27 +142,38 @@
                 // Calculate top country
                 const countryCounts = {};
                 data.forEach(visit => {
-                    countryCounts[visit.country] = (countryCounts[visit.country] || 0) + 1;
+                    if (visit.country && visit.country !== 'Unknown') {
+                        countryCounts[visit.country] = (countryCounts[visit.country] || 0) + 1;
+                    }
                 });
                 const topCountry = Object.entries(countryCounts).sort((a, b) => b[1] - a[1])[0] || ['Unknown', 0];
                 
                 // Calculate top city
                 const cityCounts = {};
                 data.forEach(visit => {
-                    cityCounts[visit.city] = (cityCounts[visit.city] || 0) + 1;
+                    if (visit.city && visit.city !== 'Unknown') {
+                        cityCounts[visit.city] = (cityCounts[visit.city] || 0) + 1;
+                    }
                 });
                 const topCity = Object.entries(cityCounts).sort((a, b) => b[1] - a[1])[0] || ['Unknown', 0];
                 
                 // Calculate top language
                 const languageCounts = {};
                 data.forEach(visit => {
-                    languageCounts[visit.language] = (languageCounts[visit.language] || 0) + 1;
+                    if (visit.language && visit.language !== 'Unknown') {
+                        languageCounts[visit.language] = (languageCounts[visit.language] || 0) + 1;
+                    }
                 });
                 const topLanguage = Object.entries(languageCounts).sort((a, b) => b[1] - a[1])[0] || ['Unknown', 0];
                 
                 // Calculate average duration
-                const totalDuration = data.reduce((sum, visit) => sum + (visit.duration || 0), 0);
-                const avgDuration = data.length > 0 ? (totalDuration / data.length).toFixed(1) : 0;
+                const durationsArray = data
+                    .filter(visit => visit.duration && visit.duration > 0)
+                    .map(visit => visit.duration);
+                    
+                const avgDuration = durationsArray.length > 0 ? 
+                    (durationsArray.reduce((sum, duration) => sum + duration, 0) / durationsArray.length).toFixed(1) : 
+                    0;
                 
                 // Update stats
                 document.getElementById('total-visits').textContent = data.length;
@@ -166,12 +182,17 @@
                 document.getElementById('desktop-visits').textContent = desktopVisits;
                 document.getElementById('top-country').textContent = topCountry[0];
                 document.getElementById('top-city').textContent = topCity[0];
-                document.getElementById('top-language').textContent = topLanguage[0];
+                document.getElementById('top-language').textContent = topLanguage[0].split('-')[0];
                 document.getElementById('avg-duration').textContent = `${avgDuration} sec`;
                 
                 // Update table
                 const tableBody = document.getElementById('visits-data');
                 tableBody.innerHTML = '';
+                
+                if (data.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="10" class="text-center">No visit data recorded yet</td></tr>';
+                    return;
+                }
                 
                 data.slice(0, 100).forEach(visit => {
                     const row = document.createElement('tr');
@@ -180,17 +201,20 @@
                     const date = new Date(visit.timestamp);
                     const formattedDate = date.toLocaleString();
                     
+                    // Format URL
+                    const urlDisplay = visit.path || '/';
+                    
                     row.innerHTML = `
                         <td>${visit.id}</td>
                         <td title="${visit.visitor_id}">${visit.visitor_id.substring(0, 8)}...</td>
                         <td>${formattedDate}</td>
-                        <td title="${visit.url}">${visit.path || '/'}</td>
+                        <td title="${visit.url}">${urlDisplay}</td>
                         <td>${visit.referrer || 'Direct'}</td>
-                        <td>${visit.device_type}</td>
-                        <td>${visit.city}, ${visit.country}</td>
-                        <td>${visit.language}</td>
-                        <td>${visit.screen_width}x${visit.screen_height}</td>
-                        <td>${visit.ip_address}</td>
+                        <td>${visit.device_type || 'Unknown'}</td>
+                        <td>${visit.city || 'Unknown'}, ${visit.country || 'Unknown'}</td>
+                        <td>${visit.language || 'Unknown'}</td>
+                        <td>${visit.screen_width || 0}x${visit.screen_height || 0}</td>
+                        <td>${visit.ip_address || 'Unknown'}</td>
                     `;
                     
                     tableBody.appendChild(row);
@@ -206,8 +230,11 @@
         // Load data when page loads
         document.addEventListener('DOMContentLoaded', loadAnalytics);
         
-        // Refresh data every 30 seconds
-        setInterval(loadAnalytics, 30000);
+        // Add refresh button listener
+        document.getElementById('refresh-btn').addEventListener('click', loadAnalytics);
+        
+        // Refresh data every 60 seconds
+        setInterval(loadAnalytics, 60000);
     </script>
 </body>
 </html>
