@@ -11,11 +11,18 @@
         #visits-table { font-size: 0.85rem; }
         .stats-card { min-height: 150px; }
         .loading { opacity: 0.5; }
+        .error-msg { color: red; font-weight: bold; }
+        .status-indicator { font-size: 0.8rem; color: #666; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1 class="my-4">Website Analytics Dashboard</h1>
+        
+        <div class="status-indicator mb-3">
+            Last updated: <span id="last-updated">Never</span>
+            <span id="connection-status" class="ms-3">Checking connection...</span>
+        </div>
         
         <div class="row mb-4">
             <div class="col-md-3">
@@ -93,6 +100,9 @@
                 <button id="refresh-btn" class="btn btn-primary btn-sm">Refresh Data</button>
             </div>
             <div class="card-body">
+                <div id="error-container" class="alert alert-danger d-none mb-3">
+                    Error loading data. <span id="error-details"></span>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-striped" id="visits-table">
                         <thead>
@@ -121,18 +131,49 @@
     </div>
 
     <script>
+        // Check server health
+        async function checkServerHealth() {
+            try {
+                const response = await fetch('/health');
+                if (response.ok) {
+                    document.getElementById('connection-status').textContent = 'Connected to server';
+                    document.getElementById('connection-status').style.color = 'green';
+                    return true;
+                } else {
+                    throw new Error('Server returned error');
+                }
+            } catch (error) {
+                document.getElementById('connection-status').textContent = 'Server connection error';
+                document.getElementById('connection-status').style.color = 'red';
+                return false;
+            }
+        }
+        
         // Function to fetch and display analytics data
         async function loadAnalytics() {
             try {
+                // Update UI
                 document.getElementById('refresh-btn').classList.add('loading');
+                document.getElementById('error-container').classList.add('d-none');
+                
+                // First check server health
+                const isHealthy = await checkServerHealth();
+                if (!isHealthy) {
+                    throw new Error('Server health check failed');
+                }
+                
+                // Fetch analytics data
                 const response = await fetch('/api/analytics');
                 document.getElementById('refresh-btn').classList.remove('loading');
                 
                 if (!response.ok) {
-                    throw new Error('Failed to fetch analytics data');
+                    throw new Error(`Failed to fetch analytics data: ${response.status} ${response.statusText}`);
                 }
                 
                 const data = await response.json();
+                
+                // Update last updated time
+                document.getElementById('last-updated').textContent = new Date().toLocaleString();
                 
                 // Process data
                 const uniqueVisitors = new Set(data.map(visit => visit.visitor_id)).size;
@@ -222,6 +263,9 @@
                 
             } catch (error) {
                 console.error('Error loading analytics:', error);
+                document.getElementById('refresh-btn').classList.remove('loading');
+                document.getElementById('error-container').classList.remove('d-none');
+                document.getElementById('error-details').textContent = error.message;
                 document.getElementById('visits-data').innerHTML = 
                     `<tr><td colspan="10" class="text-center text-danger">Error loading data: ${error.message}</td></tr>`;
             }
