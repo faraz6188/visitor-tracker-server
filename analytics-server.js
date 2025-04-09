@@ -16,48 +16,46 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
-app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'https://faraz6188.github.io',
-      'http://localhost:3000',
-      'http://localhost:8000'
-    ];
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(null, true);
-    }
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: false
-}));
+// More permissive CORS setup
+app.use(cors());
 
 app.use(bodyParser.json({ limit: '1mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Debug middleware to log requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url} from ${req.ip}`);
+  next();
+});
+
 // Determine the database directory
 let dbDir;
 try {
-  fs.accessSync('/data', fs.constants.W_OK);
-  dbDir = '/data';
-  console.log('/data directory is writable.');
+  // For Render.com environment
+  if (process.env.RENDER && fs.existsSync('/data')) {
+    dbDir = '/data';
+    console.log('Using /data directory for database storage');
+  } else {
+    dbDir = '.';
+    console.log('Using local directory for database storage');
+  }
 } catch (e) {
-  console.error('/data is not writable or does not exist, defaulting to local directory.');
+  console.error('Error determining database directory:', e);
   dbDir = '.';
 }
+
 const dbPath = path.join(dbDir, 'analytics.db');
+console.log(`Database path: ${dbPath}`);
 
 // Initialize SQLite DB
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Database error:', err.message);
-    process.exit(1);
+    console.log('Will continue without database persistence');
+  } else {
+    console.log(`Connected to SQLite database at ${dbPath}`);
   }
-  console.log(`Connected to SQLite database at ${dbPath}`);
   
   // Create visits table
   db.run(`CREATE TABLE IF NOT EXISTS visits (
@@ -89,16 +87,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
   });
 });
 
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url} - ${req.ip}`);
-  next();
-});
-
 // Helper function to safely insert visit data
 function safeInsertVisit(data, req, response) {
   if (!data.visitor_id || !data.timestamp) {
-    console.error('Missing required fields in visit data');
+    console.error('Missing required fields in visit data:', data);
     if (response) response.status(400).json({ error: 'Missing required fields' });
     return;
   }
@@ -107,9 +99,18 @@ function safeInsertVisit(data, req, response) {
   const deviceType = detectDeviceType(data.user_agent);
   
   // Get location from IP
-  const geoData = geoip.lookup(data.ip_address || '');
-  const country = geoData?.country || 'Unknown';
-  const city = geoData?.city || 'Unknown';
+  let country = 'Unknown';
+  let city = 'Unknown';
+  
+  try {
+    const geoData = geoip.lookup(data.ip_address || '');
+    if (geoData) {
+      country = geoData.country || 'Unknown';
+      city = geoData.city || 'Unknown';
+    }
+  } catch (e) {
+    console.error('Error looking up geo data:', e);
+  }
   
   // Get language from headers
   const language = req?.headers['accept-language']?.split(',')[0] || 'Unknown';
@@ -168,6 +169,7 @@ function detectDeviceType(userAgent) {
 // POST tracking endpoint
 app.post('/api/track', (req, res) => {
   try {
+    console.log('Received tracking request:', req.body);
     const visitData = req.body;
     visitData.ip_address = req.headers['x-forwarded-for']?.split(',')[0] ||
                            req.headers['x-real-ip'] ||
@@ -182,10 +184,11 @@ app.post('/api/track', (req, res) => {
 
 // GET pixel tracking endpoint
 app.get('/api/track-pixel', (req, res) => {
+  console.log('Received pixel tracking request');
   let visitData;
   try {
     visitData = JSON.parse(decodeURIComponent(req.query.data || '{}'));
-  } catch {
+  } catch (e) {
     visitData = req.query;
     console.warn('Failed to parse tracking data in pixel endpoint; using raw query params');
   }
@@ -207,11 +210,13 @@ app.get('/api/track-pixel', (req, res) => {
 
 // Add analytics API endpoint
 app.get('/api/analytics', (req, res) => {
+  console.log('Analytics data requested');
   db.all(`SELECT * FROM visits ORDER BY id DESC LIMIT 1000`, [], (err, rows) => {
     if (err) {
       console.error('Error fetching analytics data:', err.message);
       return res.status(500).json({ error: 'Database error' });
     }
+    console.log(`Returning ${rows.length} visits`);
     res.json(rows);
   });
 });
@@ -224,6 +229,11 @@ app.get('/dashboard', (req, res) => {
 // Serve the index page as default
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Start the server
