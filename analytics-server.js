@@ -10,6 +10,49 @@ const geoip = require('geoip-lite');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Determine the database directory
+let dbDir;
+try {
+  // For Render.com environment
+  if (process.env.RENDER && fs.existsSync('/data')) {
+    dbDir = '/data';
+    console.log('Using /data directory for database storage');
+  } else {
+    dbDir = '.';
+    console.log('Using local directory for database storage');
+  }
+} catch (e) {
+  console.error('Error determining database directory:', e);
+  dbDir = '.';
+}
+
+// Create the public directory if it doesn't exist
+const publicDir = path.join(__dirname, 'public');
+if (!fs.existsSync(publicDir)) {
+  fs.mkdirSync(publicDir, { recursive: true });
+  
+  // Create a simple index.html page for the root path
+  fs.writeFileSync(path.join(publicDir, 'index.html'), `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Analytics Server</title>
+    </head>
+    <body>
+      <h1>Analytics Server</h1>
+      <p>The analytics server is running.</p>
+      <p><a href="/dashboard">View Dashboard</a></p>
+    </body>
+    </html>
+  `);
+  
+  // Copy dashboard.html to public directory if it exists
+  if (fs.existsSync('./dashboard.html')) {
+    fs.copyFileSync('./dashboard.html', path.join(publicDir, 'dashboard.html'));
+  }
+}
+
+
 // Middleware: Security, CORS, JSON parsing, Static Files
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -17,12 +60,15 @@ app.use(helmet({
 }));
 
 // More permissive CORS setup
-app.use(cors());
+// Replace your existing CORS setup with this
+app.use(cors({
+  origin: '*', // Allow requests from any origin
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-app.use(bodyParser.json({ limit: '1mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
+// Add OPTIONS handling for preflight requests
+app.options('*', cors());
 // Debug middleware to log requests
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url} from ${req.ip}`);
